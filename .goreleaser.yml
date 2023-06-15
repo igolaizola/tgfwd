@@ -1,0 +1,14 @@
+builds:
+  - id: tgfwd
+    binary: tgfwd
+    main: ./cmd/tgfwd
+    goarch:
+      - amd64
+      - arm64
+      - arm
+archives:
+  - id: tgfwd
+    builds:
+      - tgfwd
+    format: zip
+    name_template: 'tgfwd_{{ .Version }}_{{- if eq .Os "darwin" }}macos{{- else }}{{ .Os }}{{ end }}_{{ .Arch }}'
