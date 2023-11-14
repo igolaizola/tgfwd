@@ -1,6 +1,6 @@
 module github.com/igolaizola/tgfwd
 
-go 1.20
+go 1.21
 
 require (
 	github.com/gotd/td v0.83.0
