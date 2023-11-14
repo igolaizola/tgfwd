@@ -2,6 +2,7 @@ package tgfwd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,8 +13,11 @@ import (
 	"github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
+	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/telegram/message"
+	"github.com/gotd/td/telegram/message/html"
 	"github.com/gotd/td/telegram/message/peer"
+	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 )
 
@@ -196,6 +200,9 @@ func Run(ctx context.Context, cfg *Config) error {
 	// Chat lookup
 	chats := make(map[int64]tg.FullChat)
 
+	download := downloader.NewDownloader()
+	upload := uploader.NewUploader(api)
+
 	onMessage := func(ctx context.Context, m *tg.Message) error {
 		// Obtain peer ID
 		fromID, err := fromPeer(m.PeerID)
@@ -205,9 +212,13 @@ func Run(ctx context.Context, cfg *Config) error {
 		}
 
 		// TODO: process other types of messages (photos, videos, etc.)
+		media, err := downloadMedia(ctx, api, download, m)
+		if err != nil {
+			log.Println(fmt.Errorf("tgfwd: couldn't get media: %w", err))
+		}
 
 		// Check if message is empty
-		if m.Message == "" {
+		if m.Message == "" && len(media) == 0 {
 			js, _ := json.MarshalIndent(m, "", "  ")
 			log.Println(string(js))
 			return nil
@@ -218,14 +229,31 @@ func Run(ctx context.Context, cfg *Config) error {
 		if !ok {
 			return nil
 		}
+		toID := fromInputPeer(to)
+		debug("tgfwd: forwarded message from %d (%s) to %d (%s)", fromID, chats[fromID].GetTitle(), toID, chats[toID].GetTitle())
 
-		// Forward message to target peer
+		// Forward media
+		if len(media) > 0 {
+			// Forward media to target peer
+			inputFile, err := upload.FromBytes(ctx, "", media)
+			if err != nil {
+				log.Println(fmt.Errorf("tgfwd: couldn't upload media: %w", err))
+			}
+			mediaOpt := message.Media(&tg.InputMediaUploadedPhoto{
+				File: inputFile,
+			}, html.String(nil, m.Message))
+			if _, err := sender.To(to).Media(ctx, mediaOpt); err != nil {
+				log.Println(fmt.Errorf("tgfwd: couldn't forward media: %w", err))
+				return nil
+			}
+			return nil
+		}
+
+		// Forward only text
 		if _, err := sender.To(to).Text(ctx, m.Message); err != nil {
 			log.Println(fmt.Errorf("tgfwd: couldn't forward message: %w", err))
 			return nil
 		}
-		toID := fromInputPeer(to)
-		debug("tgfwd: forwarded message from %d (%s) to %d (%s)", fromID, chats[fromID].GetTitle(), toID, chats[toID].GetTitle())
 
 		return nil
 	}
@@ -374,4 +402,41 @@ func fromInputPeer(p tg.InputPeerClass) int64 {
 	default:
 		return 0
 	}
+}
+
+func downloadMedia(ctx context.Context, api *tg.Client, download *downloader.Downloader, m *tg.Message) ([]byte, error) {
+	if m.Media != nil {
+		switch v := m.Media.(type) {
+		case *tg.MessageMediaPhoto:
+			photo, ok := v.Photo.AsNotEmpty()
+			if !ok {
+				return nil, nil
+			}
+			var size string
+			for _, s := range photo.Sizes {
+				v, ok := s.(*tg.PhotoSize)
+				if !ok {
+					continue
+				}
+				size = v.Type
+			}
+			if size == "" {
+				return nil, fmt.Errorf("couldn't find photo size")
+			}
+			loc := &tg.InputPhotoFileLocation{
+				ID:            photo.ID,
+				AccessHash:    photo.AccessHash,
+				FileReference: photo.FileReference,
+				ThumbSize:     size,
+			}
+			var buf bytes.Buffer
+			b := download.Download(api, loc)
+			if _, err := b.Stream(ctx, &buf); err != nil {
+				return nil, err
+			}
+			return buf.Bytes(), nil
+		default:
+		}
+	}
+	return nil, nil
 }
