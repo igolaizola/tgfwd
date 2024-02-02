@@ -220,7 +220,7 @@ func Run(ctx context.Context, cfg *Config) error {
 		// Check if message is empty
 		if m.Message == "" && len(media) == 0 {
 			js, _ := json.MarshalIndent(m, "", "  ")
-			log.Println(string(js))
+			debug("tgfwd: empty message: %s", js)
 			return nil
 		}
 
