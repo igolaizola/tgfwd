@@ -5,7 +5,7 @@ Telegram message forwarder.
 Use this tool to forward messages from one Telegram chat to another.
 All type of chats are supported: private chats, groups, channels, supergroups, etc.
 
-> 📢 Connect with us! Join our Telegram group for support and collaboration: [t.me/igolaizola_com](https://t.me/igolaizola_com)
+> 📢 Connect with us! Join our Telegram group for support and collaboration: [t.me/igohub](https://t.me/igohub)
 
 ## 📦 Installation
 
